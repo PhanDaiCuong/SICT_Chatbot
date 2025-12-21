@@ -1,0 +1,12 @@
+.env
+__pycache__/
+qdrant_storage
+logs
+.DS_Store
+.vscode
+data/*.json
+my-db
+.md
+venv/
+*.logs
+
