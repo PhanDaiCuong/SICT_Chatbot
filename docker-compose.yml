@@ -1,0 +1,60 @@
+services:
+  mysql:
+    image: xuuandong/mysql:8.0
+    container_name: mysql-container
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PASSWORD}
+      MYSQL_DATABASE: ${NAME}
+    ports:
+      - "3306:3306" 
+    volumes:
+      - my-db:/var/lib/mysql
+    networks:
+      - chatbot_net
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-container
+    restart: always
+    ports:
+      - "6333:6333" 
+      - "6334:6334" 
+    volumes:
+      - qdrant_storage:/qdrant/storage 
+    networks:
+      - chatbot_net
+
+  chatbot_api:
+    image: chatbot_api:latest
+    container_name: chatbot_api_container
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+      - qdrant
+    ports:
+      - "8080:8080"
+    networks:
+      - chatbot_net
+
+  # --- Service 4: Frontend UI ---
+  chatbot_frontend:
+    image: chatbot_frontend:latest
+    container_name: chatbot_frontend_container
+    env_file:
+      - .env
+    depends_on:
+      - chatbot_api
+    ports:
+      - "8501:8501"
+    networks:
+      - chatbot_net
+
+volumes:
+  my-db:
+  qdrant_storage:
+
+networks:
+  chatbot_net:
+    driver: bridge
