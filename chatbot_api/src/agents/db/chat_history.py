@@ -1,5 +1,14 @@
+import os
 import mysql.connector
 import logging
+from typing import List
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Qdrant as QdrantVectorStore
+from langchain.schema import Document
+from qdrant_client import QdrantClient
+from qdrant_client import models as qmodels
+
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -91,4 +100,74 @@ class MySQLChatMessageHistory:
         logging.info("Reseting message successfully!")
         cursor.close()
         connection.close()
+
+
+class ChatHistoryVectorStore:
+    """
+        Store and retrieve chat history as vectors in Qdrant, scoped by session_id.
+
+        - Adds each message as a Document(page_content=content, metadata={session_id, type}).
+        - Retrieves only the most relevant past messages for a given query using similarity search
+          with a filter on session_id.
+    """
+
+    def __init__(
+        self,
+        qdrant_client: QdrantClient,
+        embeddings: HuggingFaceEmbeddings,
+        collection_name: str = "sict_chat_history",
+    ):
+        self.collection_name = collection_name
+        self.vector_store = QdrantVectorStore(
+            client=qdrant_client,
+            collection_name=collection_name,
+            embeddings=embeddings,
+        )
+        logging.info(f"Chat history vector store ready: collection '{collection_name}'")
+
+    def add_message(self, session_id: str, message_type: str, content: str) -> None:
+        doc = Document(page_content=content, metadata={"session_id": session_id, "type": message_type})
+        self.vector_store.add_documents([doc])
+        logging.info("Added chat message to Qdrant vector store")
+
+    def search_relevant(self, session_id: str, query: str, k: int = 6) -> List[dict]:
+        """
+            Return top-k relevant messages in the session.
+        """
+        filter_ = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="session_id",
+                    match=qmodels.MatchValue(value=session_id)
+                )
+            ]
+        )
+        docs = self.vector_store.similarity_search(query, k=k, filter=filter_)
+        return [{"type": d.metadata.get("type", "user"), "content": d.page_content} for d in docs]
+
+
+_chat_history_vectors = None
+
+def get_chat_history_vector_store() -> ChatHistoryVectorStore:
+    """
+        Initialize and cache a ChatHistoryVectorStore using environment variables.
+        Env vars:
+        - HF_EMBEDDING_MODEL (default: intfloat/multilingual-e5-base)
+        - QDRANT_HOST (default: http://localhost:6333)
+        - QDRANT_API_KEY (optional)
+        - CHAT_HISTORY_COLLECTION (default: sict_chat_history)
+    """
+    global _chat_history_vectors
+    if _chat_history_vectors is not None:
+        return _chat_history_vectors
+
+    qdrant_host = os.getenv("QDRANT_HOST", "http://localhost:6333")
+    qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
+    collection = os.getenv("CHAT_HISTORY_COLLECTION", "sict_chat_history")
+    hf_embedding_model = os.getenv("HF_EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
+
+    embeddings = HuggingFaceEmbeddings(model_name=hf_embedding_model)
+    client = QdrantClient(url=qdrant_host, api_key=qdrant_api_key if qdrant_api_key else None)
+    _chat_history_vectors = ChatHistoryVectorStore(client, embeddings, collection)
+    return _chat_history_vectors
 

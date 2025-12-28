@@ -1,10 +1,18 @@
 from fastapi import FastAPI, HTTPException
-from agents.db.chat_history import MySQLChatMessageHistory, create_chat_history_table
+import os
+from agents.db.chat_history import (
+    MySQLChatMessageHistory,
+    create_chat_history_table,
+    get_chat_history_vector_store,
+)
 from models.chatbot_rag_query import ChatRequest, ChatResponse
 from agents.chatbot_rag_agents import chatbot_agent_executor, DB_CONFIG
 import uvicorn
  
-app = FastAPI(title="Vietnamese History and Culture Chatbot")
+app = FastAPI(title="SICT Chatbot")
+
+# Initialize Qdrant chat history vectors
+chat_history_vectors = get_chat_history_vector_store()
 
 create_chat_history_table(DB_CONFIG=DB_CONFIG)
 
@@ -36,9 +44,10 @@ async def chat_endpoint(request: ChatRequest):
         user_id = request.user_id
         user_message = request.message
 
-        # Fetch chat history for the user
+        # Fetch only relevant chat history (semantic, filtered by session)
         chat_history = MySQLChatMessageHistory(session_id=user_id, DB_CONFIG=DB_CONFIG)
-        history = chat_history.load_messages() 
+        top_k = int(os.getenv("CHAT_HISTORY_K", "6"))
+        history = chat_history_vectors.search_relevant(session_id=user_id, query=user_message, k=top_k)
         
         #Generate response using the chatbot agent
         response = chatbot_agent_executor.invoke({
@@ -46,9 +55,11 @@ async def chat_endpoint(request: ChatRequest):
             "chat_history": history,
         })
 
-        # Save chat history
+        # Save chat history (MySQL + Qdrant vectors)
         chat_history.add_message(message_type="user", content=user_message)
+        chat_history_vectors.add_message(session_id=user_id, message_type="user", content=user_message)
         chat_history.add_message(message_type="ai", content=response['output'])
+        chat_history_vectors.add_message(session_id=user_id, message_type="ai", content=response['output'])
 
         return ChatResponse(
                 user_id=user_id,

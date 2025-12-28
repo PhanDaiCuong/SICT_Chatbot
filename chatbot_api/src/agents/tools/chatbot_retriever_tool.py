@@ -1,54 +1,118 @@
+import os
+import logging
+import pickle
+from typing import List, Optional
 from langchain_community.vectorstores import Qdrant
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
-from langchain.schema import Document
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+from langchain.retrievers.document_compressors import CrossEncoderReranker
+from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
+from langchain.schema import Document, BaseRetriever
+from langchain.callbacks.manager import CallbackManagerForRetrieverRun
 
 
-def get_retriever(vector_store: Qdrant, collection_name: str) -> EnsembleRetriever:
-    '''
-    Creates an ensemble retriever combining vector-based (Qdrant) and keyword-based (BM25) retrieval methods.
+# Cấu hình log
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("RAG_Pipeline")
 
-    Args:
-        vector_store: A Qdrant vector store instance.
-        collection_name: The name of the collection in the Qdrant vector store.
+class BM25IndexManager:
+    def __init__(self, index_path: str = "bm25_index.pkl"):
+        self.index_path = index_path
 
-    Returns:
-        An EnsembleRetriever instance combining Qdrant and BM25 retrievers, or a BM25 retriever with a default error message if an error occurs.
-    '''
-    try:
-        # Create vector retriever
-        qdrant_retriever = vector_store.as_retriever(
-            search_type='similarity',
-            search_kwargs={"k": 4},
-        )
+    def load_or_build(self, documents: List[Document] = None, force_rebuild: bool = False) -> BM25Retriever:
+        # 1. Nếu file tồn tại và KHÔNG ép build lại -> Load
+        if os.path.exists(self.index_path) and not force_rebuild:
+            try:
+                with open(self.index_path, "rb") as f:
+                    logger.info(f"📂 Loading BM25 index from {self.index_path}...")
+                    return pickle.load(f)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load BM25 index: {e}. Rebuilding...")
 
-        # Create BM25 retriever from all documents
-        documents=[
-            Document(page_content=doc.page_content, metadata=doc.metadata)
-            for doc in vector_store.similarity_search("", k = 100)
-        ]
-
+        # 2. Build mới
         if not documents:
-            raise ValueError(f"Don't find documents in collection '{collection_name}' ")
+            raise ValueError("Cần cung cấp documents để build BM25 index mới!")
+        
+        logger.info(f"🔨 Building BM25 index with {len(documents)} documents...")
+        retriever = BM25Retriever.from_documents(documents)
+        
+        # Lưu xuống đĩa
+        with open(self.index_path, "wb") as f:
+            pickle.dump(retriever, f)
+        logger.info(f"✅ BM25 index saved/updated to {self.index_path}")
+        
+        return retriever
 
-        bm25_retriever = BM25Retriever.from_documents(documents=documents)
-        bm25_retriever.k=4
 
-        # Ensemble all retrievers with weights
-        ensemble_retriever = EnsembleRetriever(
-            retrievers=[qdrant_retriever, bm25_retriever],
-            weights=[0.7, 0.3],
-        )
 
-        return ensemble_retriever
+class LimitRetriever(BaseRetriever):
+    source_retriever: BaseRetriever
+    limit: int 
 
-    except Exception as e:
-        print(f"Error during retriever initialization: {str(e)}")
-        # Return a retriever with a default document if there is an error
-        default_doc = [
-            Document(
-                page_content="An error occurred while connecting to the database. Please try again later.",
-                metadata={"source": "error"}
-            )
-        ]
-        return BM25Retriever.from_documents(default_doc)
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun = None
+    ) -> List[Document]:
+        # Lấy full danh sách từ Ensemble
+        docs = self.source_retriever.invoke(query, config={"callbacks": run_manager})
+        # Cắt lát
+        return docs[:self.limit]
+
+def build_optimized_rag_pipeline(
+    vector_store: Qdrant,
+    bm25_manager: BM25IndexManager,
+    documents_for_bm25: Optional[List[Document]] = None,
+    force_rebuild_bm25: bool = False,
+    # --- CẤU HÌNH SỐ LƯỢNG (TUNING) ---
+    k_semantic: int = 20,    # Tăng lên để tăng khả năng tìm thấy (Recall)
+    k_bm25: int = 20,        # Tăng lên
+    fusion_top_k: int = 30,  # QUAN TRỌNG: Lấy top 30 để Reranker có cái mà chọn
+    rerank_top_n: int = 5,   # Kết quả cuối cùng cho LLM
+    cross_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+):
+    
+    # 1. Semantic
+    qdrant_retriever = vector_store.as_retriever(
+        search_type='similarity',
+        search_kwargs={"k": k_semantic}
+    )
+
+    bm25_retriever = bm25_manager.load_or_build(
+        documents=documents_for_bm25, 
+        force_rebuild=force_rebuild_bm25
+    )
+    bm25_retriever.k = k_bm25
+
+    # 3. Ensemble
+    # Semantic 0.5, Lexical 0.5 là khởi điểm an toàn nhất
+    base_ensemble = EnsembleRetriever(
+        retrievers=[qdrant_retriever, bm25_retriever],
+        weights=[0.5, 0.5] 
+    )
+
+    # 4. Limit (Cắt lát)
+    limited_retriever = LimitRetriever(
+        source_retriever=base_ensemble,
+        limit=fusion_top_k 
+    )
+
+    # 5. Reranker Logic
+    use_gpu_env = os.getenv('USE_GPU', 'False').lower() in ('true', '1', 't')
+    device = 'cuda' if use_gpu_env else 'cpu'
+
+    logger.info(f"⚙️ Reranker running on: {device.upper()}")
+    
+    cross_encoder = HuggingFaceCrossEncoder(
+        model_name=cross_model_name,
+        model_kwargs={'device': device}
+    )
+    
+    reranker = CrossEncoderReranker(model=cross_encoder, top_n=rerank_top_n)
+    
+    # 6. Final Compression
+    final_retriever = ContextualCompressionRetriever(
+        base_compressor=reranker,
+        base_retriever=limited_retriever
+    )
+    
+    logger.info(f"🚀 Pipeline: (Qdrant={k_semantic} + BM25={k_bm25}) -> Top {fusion_top_k} -> Rerank -> Top {rerank_top_n}")
+    return final_retriever
