@@ -10,7 +10,7 @@ from typing import List
 
 
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getlogger(__name__)
 
 load_dotenv()
 
@@ -93,25 +93,10 @@ def save_data_locally(documents, filename, directory):
     # Convert documents to a serializable format
     data_to_save = [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in documents]
     # Save to JSON file
-    with open(file_path, 'w') as file:
-        json.dump(data_to_save, file, indent=4)
-    print(f'Data saved to {file_path}')  # Print a success message
-
-
-def save_data_locally(documents, filename, directory):
-    """Save documents to JSON"""
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-    file_path = os.path.join(directory, filename)
-    data_to_save = [{'page_content': doc.page_content, 'metadata': doc.metadata} for doc in documents]
-    
-    # Thêm encoding='utf-8' và ensure_ascii=False để lưu tiếng Việt không bị lỗi font
     with open(file_path, 'w', encoding='utf-8') as file:
         json.dump(data_to_save, file, indent=4, ensure_ascii=False)
-    
-    LOGGER.info(f'Data saved to {file_path}')
-
+    logger.info(f'data save to {file_path}')
+    print(f'Data saved to {file_path}')  # Print a success message
 
 def read_urls_from_file(file_path: str) -> List[str]:
     """
@@ -120,7 +105,7 @@ def read_urls_from_file(file_path: str) -> List[str]:
     """
     urls = []
     if not os.path.exists(file_path):
-        LOGGER.error(f"File not found: {file_path}")
+        logger.error(f"File not found: {file_path}")
         return []
 
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -129,7 +114,7 @@ def read_urls_from_file(file_path: str) -> List[str]:
             if clean_line and not clean_line.startswith('#'):
                 urls.append(clean_line)
     
-    LOGGER.info(f"Found {len(urls)} URLs in {file_path}")
+    logger.info(f"Found {len(urls)} URLs in {file_path}")
     return urls
 
 def crawl_and_save_data(list_urls: List[str], chunk_size: int, chunk_overlap: int, doc_name: str, directory_data: str) -> None:
@@ -143,10 +128,10 @@ def crawl_and_save_data(list_urls: List[str], chunk_size: int, chunk_overlap: in
         all_documents.extend(docs)
 
     if all_documents:
-        LOGGER.info(f"Total documents collected: {len(all_documents)}")
+        logger.info(f"Total documents collected: {len(all_documents)}")
         if directory_data is None:
             directory_data = "./data"
         save_data_locally(all_documents, doc_name, directory_data)
-        LOGGER.info("All processing complete!")
+        logger.info("All processing complete!")
     else:
-        LOGGER.warning("No data collected from any URL.")
+        logger.warning("No data collected from any URL.")

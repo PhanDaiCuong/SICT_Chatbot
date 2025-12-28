@@ -1,7 +1,7 @@
 import os
 import json
 from langchain_openai import OpenAIEmbeddings
-from langchain.vectorstores import Qdrant
+from langchain_community.vectorstores import Qdrant
 from langchain.schema import Document
 from qdrant_client import QdrantClient, models
 from uuid import uuid4
@@ -49,7 +49,7 @@ def initial_qdrant_database(qdrant_host: str, qdrant_api_key: str, qdrant_collec
 
     # setup dimension of embedding models and similarity algorithm
     vector_config = models.VectorParams(
-        size=1536,
+        size=768,
         distance=models.Distance.COSINE
     )
 
@@ -121,7 +121,7 @@ def seed_qdrant(qdrant_host:str, qdrant_api_key: str, collection_name: str, embe
     # Convert data to document list
     documents = [
         Document(
-            page_content=doc.get('page_content') or '',
+            page_content="passage: " + (doc.get('page_content') or ''),
             metadata={
                 'source': doc['metadata'].get('source') or '',
                 'content_type': doc['metadata'].get('content_type') or 'text/plain',
@@ -132,6 +132,7 @@ def seed_qdrant(qdrant_host:str, qdrant_api_key: str, collection_name: str, embe
         )
         for doc in local_data
     ]
+
 
     # Create unique id for each document 
     uuids = [str(uuid4()) for _ in range(len(documents))]
@@ -146,57 +147,38 @@ def seed_qdrant(qdrant_host:str, qdrant_api_key: str, collection_name: str, embe
     vectorstore.add_documents(documents=documents, ids=uuids)
     LOGGER.info("Add documents successfully!")
 
-
 if __name__ == "__main__":
-    import sys
     from pathlib import Path
     from dotenv import load_dotenv
-    
+
     load_dotenv()
+
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
+
     qdrant_host = os.getenv("QDRANT_HOST", "http://localhost:6333")
     qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
     collection_name = os.getenv("QDRANT_COLLECTION", "sict_documents")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    
-    if not openai_api_key:
-        print("Error: OPENAI_API_KEY is not set")
-        sys.exit(1)
-    
+
     current_dir = Path(__file__).parent
     project_root = current_dir.parent.parent
     data_directory = str(project_root / "data")
-    
-    try:
-        print("\nStarting Qdrant database seeding...")
-        print(f"   Qdrant Host: {qdrant_host}")
-        print(f"   Collection: {collection_name}")
-        
-        print("\nInitializing embeddings...")
-        embedding_model = OpenAIEmbeddings(
-            api_key=openai_api_key,
-            model="text-embedding-ada-002"
-        )
-        print("Embeddings initialized")
-        
-        print("\nSeeding data...")
-        seed_qdrant(
-            qdrant_host=qdrant_host,
-            qdrant_api_key=qdrant_api_key,
-            collection_name=collection_name,
-            embedding_model=embedding_model,
-            filename="sict_database.json",
-            directory=data_directory
-        )
-        
-        print("\nDatabase seeded successfully!")
-        print(f"   Collection: {collection_name}")
-        
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        sys.exit(1)
 
+    print("\nStarting Qdrant database seeding...")
+    print(f"   Qdrant Host: {qdrant_host}")
+    print(f"   Collection: {collection_name}")
+
+    embedding_model = get_e5_embedding_model()
+
+    seed_qdrant(
+        qdrant_host=qdrant_host,
+        qdrant_api_key=qdrant_api_key,
+        collection_name=collection_name,
+        embedding_model=embedding_model,
+        filename="sict_database.json",
+        directory=data_directory
+    )
+
+    print("\n✅ Database seeded successfully!")
