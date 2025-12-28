@@ -38,7 +38,7 @@ with st.sidebar:
 
 # --- GIAO DIỆN CHÍNH ---
 st.title("🏛️ HỆ THỐNG HỎI ĐÁP TIN TỨC SICT")
-st.caption("Trường Công nghệ Thông tin và Truyền thông - Đại học Đà Nẵng")
+st.caption("Trường Công nghệ Thông tin và Truyền thông")
 
 st.info(
     "👋 Chào bạn! Hãy hỏi tôi bất cứ điều gì về lịch học, học phí, sự kiện hoặc quy chế của trường SICT."
@@ -79,12 +79,12 @@ if prompt := st.chat_input("Bạn đang quan tâm đến thông tin gì?"):
                 output_text = response_data.get("response", "Xin lỗi, tôi không tìm thấy câu trả lời.")
             else:
                 output_text = (
-                    f"⚠️ Lỗi kết nối đến máy chủ (Mã lỗi: {response.status_code}). "
+                    f"Lỗi kết nối đến máy chủ (Mã lỗi: {response.status_code}). "
                     "Vui lòng thử lại sau."
                 )
 
         except requests.exceptions.RequestException as e:
-            output_text = f"⚠️ Không thể kết nối đến Backend Chatbot. Chi tiết lỗi: {e}"
+            output_text = f"Không thể kết nối đến Backend Chatbot. Chi tiết lỗi: {e}"
 
     # Hiển thị phản hồi từ bot
     st.chat_message("assistant").markdown(output_text)
