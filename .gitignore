@@ -5,8 +5,9 @@ logs
 .DS_Store
 .vscode
 data/*.json
-my-db
+.my-db
 .md
 venv/
 *.logs
+data_crawl
 

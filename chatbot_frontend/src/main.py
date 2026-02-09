@@ -3,9 +3,8 @@ import uuid
 import requests
 import streamlit as st
 
-# Lấy URL từ biến môi trường. 
-# Lưu ý: Trong docker-compose, biến này nên là 'http://chatbot_api:8080/chatbot-rag-agent'
-CHATBOT_URL = os.getenv("CHATBOT_URL", "http://localhost:8080/chatbot-rag-agent")
+
+CHATBOT_URL = os.getenv("CHATBOT_URL")
 
 # Tạo user_id tự động cho mỗi phiên làm việc
 if "user_id" not in st.session_state:
@@ -16,19 +15,18 @@ with st.sidebar:
     st.header("Giới thiệu")
     st.markdown(
         """
-        Đây là **SICT News Chatbot** - Trợ lý ảo hỗ trợ giải đáp thắc mắc về:
+        Đây là **LumiЯ Chatbot** - Trợ lý ảo hỗ trợ giải đáp thắc mắc về:
         
-        * 📰 **Tin tức & Sự kiện** nhà trường.
-        * 🎓 **Thông tin Đào tạo** (Lịch thi, thời khóa biểu).
-        * 📢 **Tuyển sinh** và Công tác sinh viên.
+        * **Tin tức & Sự kiện** nhà trường.
+        * **Thông tin Đào tạo** (Lịch thi, thời khóa biểu).
+        * **Tuyển sinh** và Công tác sinh viên.
         
-        Hệ thống sử dụng công nghệ **RAG (Retrieval-Augmented Generation)** để tìm kiếm thông tin chính xác nhất từ cơ sở dữ liệu của trường SICT.
+        Hệ thống sử dụng công nghệ **RAG (Retrieval-Augmented Generation)** để tìm kiếm thông tin chính xác nhất từ cơ sở dữ liệu của Đại học HaUI.
         """
     )
 
     st.header("Câu hỏi gợi ý")
     st.markdown("- Học phí ngành Công nghệ thông tin năm nay là bao nhiêu?")
-    st.markdown("- Sắp tới trường có sự kiện gì cho tân sinh viên không?")
     st.markdown("- Điều kiện để đạt học bổng khuyến khích học tập?")
     st.markdown("- Thời gian đăng ký tín chỉ học kỳ này?")
     st.markdown("- Thủ tục xin giấy xác nhận sinh viên như thế nào?")
@@ -37,12 +35,9 @@ with st.sidebar:
     st.markdown("- Liên hệ phòng Công tác sinh viên ở đâu?")
 
 # --- GIAO DIỆN CHÍNH ---
-st.title("🏛️ HỆ THỐNG HỎI ĐÁP TIN TỨC SICT")
-st.caption("Trường Công nghệ Thông tin và Truyền thông - Đại học Đà Nẵng")
+st.title("HỆ THỐNG HỎI ĐÁP TIN TỨC")
+st.caption("Đại học Công nghiệp Hà Nội")
 
-st.info(
-    "👋 Chào bạn! Hãy hỏi tôi bất cứ điều gì về lịch học, học phí, sự kiện hoặc quy chế của trường SICT."
-)
 
 # Khởi tạo lịch sử chat
 if "messages" not in st.session_state:
@@ -68,7 +63,7 @@ if prompt := st.chat_input("Bạn đang quan tâm đến thông tin gì?"):
     }
 
     # Gọi API Backend
-    with st.spinner("Đang tra cứu thông tin trường SICT..."):
+    with st.spinner("Đang tra cứu thông tin ..."):
         try:
             # Lưu ý: CHATBOT_URL phải đúng địa chỉ của container API
             response = requests.post(CHATBOT_URL, json=data)
@@ -79,12 +74,12 @@ if prompt := st.chat_input("Bạn đang quan tâm đến thông tin gì?"):
                 output_text = response_data.get("response", "Xin lỗi, tôi không tìm thấy câu trả lời.")
             else:
                 output_text = (
-                    f"⚠️ Lỗi kết nối đến máy chủ (Mã lỗi: {response.status_code}). "
+                    f"Lỗi kết nối đến máy chủ (Mã lỗi: {response.status_code}). "
                     "Vui lòng thử lại sau."
                 )
 
         except requests.exceptions.RequestException as e:
-            output_text = f"⚠️ Không thể kết nối đến Backend Chatbot. Chi tiết lỗi: {e}"
+            output_text = f"Không thể kết nối đến Chatbot. Chi tiết lỗi: {e}"
 
     # Hiển thị phản hồi từ bot
     st.chat_message("assistant").markdown(output_text)

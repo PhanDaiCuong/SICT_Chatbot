@@ -153,7 +153,4 @@ CLASSIFICATION_SETS = {
         "daihoc", "saudaihoc", "thacsi", "tiensi", 
         "bangtienanh", "daotaonganhan", "kysu", "daotaolienket"
     },
-    
-    # E. Các danh mục chung (Category)
-    # (Những key nào không nằm trong 4 nhóm trên sẽ tự động được coi là Category hoặc Topic)
 }

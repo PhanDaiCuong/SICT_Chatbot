@@ -1,6 +1,6 @@
 #chatbot_api/Dockerfile
 
-FROM xuuandong/python:3.10-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 COPY ./src/ /app/
