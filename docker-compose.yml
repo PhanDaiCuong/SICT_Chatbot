@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:latest
     container_name: mysql-container
     restart: always
     environment:
@@ -28,7 +28,9 @@ services:
       - chatbot_net
 
   chatbot_api:
-    image: chatbot_api:latest
+    build:
+      context: ./chatbot_api
+      dockerfile: Dockerfile
     container_name: chatbot_api_container
     env_file:
       - .env
@@ -42,7 +44,9 @@ services:
 
   # --- Service 4: Frontend UI ---
   chatbot_frontend:
-    image: chatbot_frontend:latest
+    build:
+      context: ./chatbot_frontend
+      dockerfile: Dockerfile
     container_name: chatbot_frontend_container
     env_file:
       - .env
