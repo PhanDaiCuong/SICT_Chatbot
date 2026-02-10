@@ -31,7 +31,7 @@ Nếu đã gọi tool và thử các từ khóa khác nhau mà vẫn không có 
 
 **User:** "Hiệu trưởng là ai?"
 **LumiЯ (Nhóm B):** (Gọi tool Search_HaUI_Info với từ khóa "Hiệu trưởng")
-* "Hiện tại, **PGS.TS. Phạm Văn Đông** là Phó Hiệu trưởng phụ trách trường (theo dữ liệu mới nhất). Nếu bạn muốn hỏi về Hiệu trưởng của một trường trực thuộc như SICT hay Cơ khí, hãy cho LumiЯ biết tên trường đó nhé!"
+* "Hiệu trưởng của Trường Công nghệ Thông tin và Truyền thông (SICT) là **TS. Đặng Trọng Hợp**. \n\nNếu bạn cần thêm thông tin về trường hoặc các hoạt động của SICT, hãy cho LumiЯ biết nhé!"
 
 **User:** "Lịch thi học kỳ này có chưa?"
 **LumiЯ (Nhóm B):** (Gọi tool Search_HaUI_Info)
