@@ -1,3 +1,50 @@
+"""
+RAG Agent setup using LangChain + LangGraph with hybrid retrieval tools.
+
+This module wires together:
+- OpenAI chat model for response generation.
+- Qdrant vector store for semantic search.
+- A custom retrieval tool (`Search_HaUI_Info`) built on an optimized pipeline.
+- A LangGraph workflow that decides when to call tools.
+- A small adapter that exposes a simple `.invoke({...})` API.
+
+Environment Variables
+---------------------
+Required:
+- `OPENAI_API_KEY`: API key for the OpenAI model.
+
+Optional (with defaults):
+- `OPENAI_MODEL` (default: `gpt-4o-mini`): Chat model name.
+- `EMBEDDING_MODEL` (default: `text-embedding-3-small`): Embedding model.
+- `QDRANT_HOST` (default: `http://localhost:6333`): Qdrant endpoint.
+- `COLLECTION_NAME`: Name of the Qdrant collection (must exist ahead of time).
+- `QDRANT_API_KEY`: If your Qdrant instance requires authentication.
+- `BM25_INDEX_PATH` (default: `bm25_index.pkl`): Path to cached BM25 index.
+- `BM25_FORCE_REBUILD` (default: `false`): Force rebuild the BM25 index.
+- `BM25_CORPUS_K` (default: `5000`): Max payloads to pull when building BM25.
+
+Database (optional, currently logged for visibility):
+- `HOST`, `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE` (see `DB_CONFIG`).
+
+Quick Start
+-----------
+1) Ensure Qdrant is running and the collection is created (via your ingestion).
+2) Set environment variables (e.g., via `.env`).
+3) Import `chatbot_agent_executor` and call `.invoke({"input": "..."})`.
+
+Example
+-------
+````python
+from chatbot_api.src.agents.chatbot_rag_agents import chatbot_agent_executor
+
+result = chatbot_agent_executor.invoke({
+    "chat_history": [{"type": "user", "content": "Hello"}],
+    "input": "What is the admission deadline?"
+})
+print(result["output"])  # Final assistant response
+````
+"""
+
 import os
 import logging
 import traceback
@@ -43,6 +90,24 @@ logger.info(f"-------------------->Thông tin kết nối mysql: {DB_CONFIG}")
 
 # --- 1. KHỞI TẠO COMPONENTS ---
 def initialize_components():
+    """Initialize embeddings, Qdrant vector store, and chat model.
+
+    Returns
+    -------
+    tuple
+        A triple `(embedding_model, vector_store, chat_model)`.
+
+    Raises
+    ------
+    ValueError
+        If `OPENAI_API_KEY` is missing.
+
+    Notes
+    -----
+    - Ensure your Qdrant collection exists; otherwise the vector store
+      initialization may fail. Run your ingestion beforehand.
+    - `ChatOpenAI` is created with low temperature for deterministic outputs.
+    """
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY is missing!")
     
@@ -97,7 +162,6 @@ if vector_store:
             logger.info(f"Đã tải {len(documents_for_bm25)} documents cho BM25.")
 
         # Logic 2: Build Pipeline (Hybrid Search + Rerank)
-        # Lưu ý: Hàm build_optimized_rag_pipeline bên file kia phải chấp nhận tham số bm25_manager
         retriever = build_optimized_rag_pipeline(
             vector_store=vector_store,
             bm25_manager=BM25IndexManager(bm25_path), 
@@ -108,6 +172,28 @@ if vector_store:
         # Logic 3: Định nghĩa Tool (Có Try/Catch an toàn)
         @lc_tool("Search_HaUI_Info")
         def search_haui_info(query: str) -> str:
+            """Search official HaUI information via the hybrid RAG retriever.
+
+            Use this tool to fetch authoritative information (staff, tuition,
+            schedules, news, regulations, etc.). Prefer calling this before
+            concluding that data is unavailable.
+
+            Parameters
+            ----------
+            query : str
+                Natural language query to search in the indexed corpus.
+
+            Returns
+            -------
+            str
+                A newline-separated string of sources concatenating page content.
+                If empty or an error occurs, returns a descriptive message.
+
+            Notes
+            -----
+            - Logs success and a small preview of the first result.
+            - Catches exceptions to keep the agent responsive.
+            """
             """Tra cứu thông tin chính thức về HaUI (Nhân sự, học phí, lịch thi, tin tức, quy chế...). 
             Cần sử dụng công cụ này trước khi kết luận không có dữ liệu."""
             
@@ -144,6 +230,24 @@ if chat_model:
     model_with_tools = chat_model.bind_tools(tools)
 
     def call_model(state: MessagesState):
+        """Core node: build input messages, call the LLM, and return response.
+
+        Steps
+        -----
+        - Prepend the `system` prompt to incoming messages.
+        - Invoke the model (with tools bound) and capture its response.
+        - Log whether the agent decided to use a tool.
+
+        Parameters
+        ----------
+        state : MessagesState
+            The current message state managed by LangGraph.
+
+        Returns
+        -------
+        dict
+            A dict with a `messages` key containing the latest assistant message.
+        """
         msgs = state["messages"]
         
         # System Prompt
@@ -177,10 +281,48 @@ if chat_model:
 
     # --- ADAPTER (Giữ nguyên để tương thích API cũ) ---
     class GraphAgentExecutorAdapter:
+        """Thin adapter exposing a simple `.invoke` API over a LangGraph app.
+
+        Use this to integrate with existing HTTP handlers or CLI code where
+        you want to pass a dict containing `chat_history` and `input`, and
+        receive a dict with `output`.
+        """
         def __init__(self, graph):
+            """Store the compiled graph for later invocations.
+
+            Parameters
+            ----------
+            graph : Any
+                The compiled LangGraph application.
+            """
             self.graph = graph
 
         def invoke(self, inputs: dict):
+            """Run a single conversational step through the graph.
+
+            Parameters
+            ----------
+            inputs : dict
+                Dict with optional `chat_history` (list of dicts with `type`
+                and `content`) and `input` (latest user message).
+
+            Returns
+            -------
+            dict
+                Dict with a single key `output` containing the assistant's
+                message text from the last response.
+
+            Examples
+            --------
+            ````python
+            adapter = GraphAgentExecutorAdapter(app)
+            resp = adapter.invoke({
+                "chat_history": [{"type": "user", "content": "hi"}],
+                "input": "Tell me campus news"
+            })
+            print(resp["output"])  # assistant response
+            ````
+            """
             # Chuyển đổi chat_history từ dict sang object LangChain
             msg_list = []
             for m in inputs.get("chat_history", []):
